@@ -2,6 +2,10 @@
 
 HoTTServer::HoTTServer(uint8_t rxPin, uint8_t txPin) : _serialPort(rxPin, txPin){
 	setWarning(HOTT_ALARM_NONE);
+	_latitude   = 0.0f;
+	_longitude  = 0.0f;
+	_satelites  = 0;
+	_gpsFix     = 0;
 }
 
 void HoTTServer::registerModule(uint8_t module) {
@@ -505,24 +509,65 @@ bool HoTTServer::processRequest() {
 						telemetryData[4] = _inverted1;
 						telemetryData[5] = _inverted1;
 						
-						// Flight direction
+						// Flight direction (HoTT = direction / 2 : 1 step = 2 degres)
 						telemetryData[6] = _flightDirection / 2;
 						
-						// speed
+						// Ground speed in km/h (LSB/MSB)
 						telemetryData[7] = lowByte(_speed);
 						telemetryData[8] = highByte(_speed);
-						
-						// distance
+
+						// Latitude : N/S, degrees, minutes integer, minutes decimal LSB/MSB
+						// Format: deg (0-90), min entier (0-59), min frac * 10000 (0-9999)
+						{
+							float absLat     = fabs(_latitude);
+							uint8_t latDeg   = (uint8_t)absLat;
+							float latMin     = (absLat - latDeg) * 60.0f;
+							uint8_t latMinI  = (uint8_t)latMin;
+							uint16_t latMinF = (uint16_t)((latMin - latMinI) * 10000.0f);
+							telemetryData[9]  = (_latitude < 0.0f) ? 1 : 0; // 0=N 1=S
+							telemetryData[10] = latDeg;
+							telemetryData[11] = latMinI;
+							telemetryData[12] = lowByte(latMinF);
+							telemetryData[13] = highByte(latMinF);
+						}
+
+						// Longitude : E/W, degrees, minutes integer, minutes decimal LSB/MSB
+						{
+							float absLon     = fabs(_longitude);
+							uint8_t lonDeg   = (uint8_t)absLon;
+							float lonMin     = (absLon - lonDeg) * 60.0f;
+							uint8_t lonMinI  = (uint8_t)lonMin;
+							uint16_t lonMinF = (uint16_t)((lonMin - lonMinI) * 10000.0f);
+							telemetryData[14] = (_longitude < 0.0f) ? 1 : 0; // 0=E 1=W
+							telemetryData[15] = lonDeg;
+							telemetryData[16] = lonMinI;
+							telemetryData[17] = lowByte(lonMinF);
+							telemetryData[18] = highByte(lonMinF);
+						}
+
+						// Distance au point de départ (LSB/MSB) en m
 						telemetryData[19] = lowByte(_distance);
 						telemetryData[20] = highByte(_distance);
 						
-						// altitude
-						telemetryData[21] = lowByte(_altitude+500);
-						telemetryData[22] = highByte(_altitude+500);
+						// Altitude, décalage -500 : 500 = 0 m
+						telemetryData[21] = lowByte(_altitude + 500);
+						telemetryData[22] = highByte(_altitude + 500);
 
-						// climb rate
-						telemetryData[23] = 0x78;
-						telemetryData[24] = 0x00;
+						// Climb rate 1s (120 = 0 m/s)
+						telemetryData[23] = lowByte((int16_t)(_climbRate1s * 100) + 30000);
+						telemetryData[24] = highByte((int16_t)(_climbRate1s * 100) + 30000);
+
+						// Climb rate 3s (120 = 0 m/s)
+						telemetryData[25] = 120 + (int8_t)_climbRate3s;
+
+						// Nombre de satellites
+						telemetryData[26] = _satelites;
+
+						// GPS fix character : 0=no fix, '2'=2D, '3'=3D
+						telemetryData[27] = _gpsFix;
+
+						// Home direction
+						telemetryData[28] = _homeDirection;
 
 						_sendData(telemetryData, 45);
 				} else if (requestID == HOTT_AIRESC_MODULE_ID && _isModuleRegistered(HoTTServerESC) ) {
@@ -672,8 +717,8 @@ void HoTTServer::setCurrent(HOTTCurrent_e sensorID, float current) {
 		case HOTT_BEC_CURRENT:
 			current = constrain(current, 0.0, 25.5);
 			
-			_BECCurrent = current;
-			_maxBECCurrent = max(_maxBECCurrent, current);
+			_BECCurrent = (uint8_t)current;
+			_maxBECCurrent = max(_maxBECCurrent, (uint8_t)current);
 			break;
 		case HOTT_MAX_MOTOR_CURRENT:
 			current = constrain(current, 0.0, 25.5);
@@ -773,16 +818,16 @@ void HoTTServer::setTemperature(HOTTTemperature_e temperatureID, int8_t temperat
 			_temperature2 = temperature;
 			break;
 		case HOTT_ESC_TEMPERATURE:
-			_ESCTemperature = temperature;
-			_maxESCTemperature = max(_maxESCTemperature, temperature);
+			_ESCTemperature = (uint8_t)temperature;
+			_maxESCTemperature = max(_maxESCTemperature, (uint8_t)temperature);
 			break;
 		case HOTT_BEC_TEMPERATURE:
-			_BECTemperature = temperature;
-			_maxBECTemperature = max(_maxBECTemperature, temperature);
+			_BECTemperature = (uint8_t)temperature;
+			_maxBECTemperature = max(_maxBECTemperature, (uint8_t)temperature);
 			break;
 		case HOTT_MOTOR_TEMPERATURE:
-			_motorTemperature = temperature;
-			_maxMotorTemperature = max(_maxMotorTemperature, temperature);
+			_motorTemperature = (uint8_t)temperature;
+			_maxMotorTemperature = max(_maxMotorTemperature, (uint8_t)temperature);
 			break;
 	}
 }
@@ -873,5 +918,20 @@ void HoTTServer::setGyro(HOTTAxis_e axisID, uint8_t gyro) {
 			_gyroZ = gyro;
 			break;
 	}	
+}
+
+void HoTTServer::setLatitude(float lat) {
+	_latitude = lat;
+}
+
+void HoTTServer::setLongitude(float lon) {
+	_longitude = lon;
+}
+
+void HoTTServer::setSatellites(uint8_t nbSat) {
+	_satelites = nbSat;
+	if (nbSat == 0)       _gpsFix = 0;    // pas de fix
+	else if (nbSat < 4)   _gpsFix = '2';  // fix 2D
+	else                  _gpsFix = '3';  // fix 3D
 }
 

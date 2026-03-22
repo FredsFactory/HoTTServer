@@ -240,6 +240,9 @@ private:
 	uint8_t _motorAdvancedTiming;
 	uint8_t _maxMotorCurrent;
 	uint8_t _satelites;
+	uint8_t _gpsFix;      // GPS fix character: 0=no fix, '2'=2D, '3'=3D
+	float   _latitude;    // WGS84 latitude in decimal degrees (positive=N)
+	float   _longitude;   // WGS84 longitude in decimal degrees (positive=E)
 	uint8_t _angleX;
 	uint8_t _angleY;
 	uint8_t _angleZ;
@@ -283,5 +286,8 @@ public:
 	void setMotorAdvancedTimimg(uint8_t timing);
 	void setAngle(HOTTAxis_e axisID, uint8_t angle);
 	void setGyro(HOTTAxis_e axisID, uint8_t gyro);
+	void setLatitude(float lat);       // WGS84 decimal degrees (positive=N)
+	void setLongitude(float lon);      // WGS84 decimal degrees (positive=E)
+	void setSatellites(uint8_t nbSat); // nombre de satellites
 };
 #endif /* HoTTServer_h */
